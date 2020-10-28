@@ -1,28 +1,8 @@
-# baselines_new
+# Multi-step HER
 baselines_new supports multi-step HER and is revised from OpenAI baselines.
-
-## Prerequisites 
-Baselines requires python3 (>=3.5) with the development headers. You'll also need system packages CMake, OpenMPI and zlib. Those can be installed as follows
-### Ubuntu 
-    
-```bash
-sudo apt-get update && sudo apt-get install cmake libopenmpi-dev python3-dev zlib1g-dev
-```
-    
-### Mac OS X
-Installation of system packages on Mac requires [Homebrew](https://brew.sh). With Homebrew installed, run the following:
-```bash
-brew install cmake openmpi
-```
-
-## Tensorflow versions
-The master branch supports Tensorflow from version 1.4 to 1.14. For Tensorflow 2.0 support, please use tf2 branch.
 
 ## Installation
 - Clone the repo and cd into it:
-    ```bash
-    git clone https://github.com/openai/baselines.git
-    cd baselines
 
 - Install baselines package
     ```bash

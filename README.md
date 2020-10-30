@@ -1,5 +1,5 @@
 # Multi-step HER
-baselines_new supports multi-step HER and is revised from OpenAI baselines.
+Multi-step HER supports multi-step HER and is revised from OpenAI baselines.
 
 ## Installation
 - Clone the repo and cd into it:

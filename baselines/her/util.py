@@ -155,3 +155,13 @@ def g_to_ag(o, env_id):
     else:
         raise NotImplementedError
     return ag
+
+
+def dump_params(logger, params):
+    import json
+    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f: # save params
+        import copy
+        dump_params = copy.deepcopy(params)
+        for key, value in params.items():
+            dump_params[key] = str(value)
+        json.dump(dump_params, f)

@@ -2,7 +2,6 @@ import os
 
 import click
 import numpy as np
-import json
 from mpi4py import MPI
 import time
 
@@ -11,6 +10,7 @@ from baselines.common import set_global_seeds, tf_util
 from baselines.common.mpi_moments import mpi_moments
 import baselines.her.experiment.config as config
 from baselines.her.rollout import RolloutWorker
+from baselines.her.util import dump_params
 
 def mpi_average(value):
     if not isinstance(value, list):
@@ -135,9 +135,8 @@ def learn(*, network, env, num_epoch, total_timesteps,
     params = config.prepare_params(params)
     params['rollout_batch_size'] = env.num_envs
     random_init = params['random_init']
-
-    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f: # save params
-         json.dump(params, f)
+    # save total params
+    dump_params(logger, params)
 
     if rank == 0:
         config.log_params(params, logger=logger)

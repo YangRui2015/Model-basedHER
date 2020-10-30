@@ -130,13 +130,14 @@ def learn(*, network, env, num_epoch, total_timesteps,
     if env_name in config.DEFAULT_ENV_PARAMS:
         params.update(config.DEFAULT_ENV_PARAMS[env_name])  # merge env-specific parameters in
     params.update(**override_params)  # makes it possible to override any parameter
-    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f: # save params
-         json.dump(params, f)
 
     params.update(kwargs)   # make kwargs part of params
     params = config.prepare_params(params)
     params['rollout_batch_size'] = env.num_envs
     random_init = params['random_init']
+
+    with open(os.path.join(logger.get_dir(), 'params.json'), 'w') as f: # save params
+         json.dump(params, f)
 
     if rank == 0:
         config.log_params(params, logger=logger)

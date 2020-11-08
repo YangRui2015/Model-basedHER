@@ -87,6 +87,7 @@ class SawyerGoalWrapper(Wrapper):
             'state_desired_goal':desired_goal
         }
         action = np.array([])
+        # import pdb; pdb.set_trace()
         return self.env.compute_rewards(action, obs)
 
     def sample_goal(self):

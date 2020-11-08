@@ -165,3 +165,9 @@ def dump_params(logger, params):
         for key, value in params.items():
             dump_params[key] = str(value)
         json.dump(dump_params, f)
+
+def write_to_file(string, path='file.txt'):
+    with open(path, 'a+') as file:
+        file.writelines(string + '\n')
+        file.flush()
+

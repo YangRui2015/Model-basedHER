@@ -11,8 +11,6 @@ Multi-step HER supports multi-step HER and is revised from OpenAI baselines.
 
 
 ## Usage
-
-## Usage
 DDPG:
 ```bash
 python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12 --noher True --log_path=~/logs/FetchPush_env12/ --save_path=~/ddpg/fetchpush/

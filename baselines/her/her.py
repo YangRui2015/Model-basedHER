@@ -44,6 +44,8 @@ def train(*, policy, rollout_worker, evaluator,
     logger.info('Start training...')
     # num_timesteps = n_epochs * n_cycles * rollout_length * number of rollout workers
     for epoch in range(n_epochs):
+        # from baselines.her.util import write_to_file
+        # write_to_file('\n epoch: {}'.format(epoch))
         time_start = time.time()
         # train
         rollout_worker.clear_history()

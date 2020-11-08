@@ -37,9 +37,8 @@ def obs_to_goal_fun(env):
     # only support Fetchenv and Handenv now
     from gym.envs.robotics import FetchEnv, hand_env
     from multiworld.envs.pygame import point2d
-    from multiworld.envs.mujoco.sawyer_xyz import sawyer_push_nips  
+    from multiworld.envs.mujoco.sawyer_xyz import sawyer_push_and_reach_env
     from multiworld.envs.mujoco.sawyer_xyz import sawyer_reach
-    from multiworld.envs.mujoco.sawyer_xyz import sawyer_door_hook
 
     if isinstance(env.env, FetchEnv):
         obs_dim = env.observation_space['observation'].shape[0]
@@ -57,20 +56,21 @@ def obs_to_goal_fun(env):
         def obs_to_goal(observation):
             goal = observation[:, -goal_dim:]
             return goal.copy()
-    elif isinstance(env.env.env, point2d.Point2DEnv):
+    elif isinstance(env.env, point2d.Point2DEnv):
         def obs_to_goal(observation):
             return observation.copy()
-    elif isinstance(env.env.env, sawyer_push_nips.SawyerPushAndReachXYEnv):
-        assert env.env.env.observation_space['observation'].shape == env.env.env.observation_space['achieved_goal'].shape, \
+    elif isinstance(env.env, sawyer_push_and_reach_env.SawyerPushAndReachXYZEnv):
+        assert env.env.observation_space['observation'].shape == env.env.observation_space['achieved_goal'].shape, \
             "This environment's observation space doesn't equal goal space"
         def obs_to_goal(observation):
             return observation
-    elif isinstance(env.env.env, sawyer_reach.SawyerReachXYZEnv) or isinstance(env.env.env, sawyer_door_hook.SawyerDoorHookEnv):
+    elif isinstance(env.env, sawyer_reach.SawyerReachXYZEnv):
         def obs_to_goal(observation):
             return observation
     else:
-        import pdb; pdb.set_trace()
-        raise NotImplementedError('Do not support such type {}'.format(env))
+        def obs_to_goal(observation):
+            return observation
+        # raise NotImplementedError('Do not support such type {}'.format(env))
         
     return obs_to_goal
 
@@ -237,6 +237,9 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
             acts = n_step_us[:, i+1,:].reshape((batch_size, episode_batch['u'].shape[-1]))
             correction += n_step_reward_mask[:, i+1] * (Q_pi_fun(o=obs, g=transitions['g'].reshape(-1)) - Q_fun(o=obs, g=transitions['g'].reshape(-1),u=acts)).reshape(-1) 
         transitions['r']  += correction * cor_rate
+        # if np.random.random() < 0.1:
+        #     from baselines.her.util import write_to_file
+        #     write_to_file(str(correction.mean()))
 
         return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
 

@@ -80,10 +80,10 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
     else:
         env = gym.make(env_id, **env_kwargs)
     
-    if env_id.startswith('Sawyer'):
+    if env_id.startswith('Sawyer') or env_id.startswith('Ant'):
         from baselines.her.multi_world_wrapper import SawyerGoalWrapper
         env = SawyerGoalWrapper(env)
-    if (env_id.startswith('Sawyer') or env_id.startswith('Point2D')) and not hasattr(env, '_max_episode_steps'):
+    if (env_id.startswith('Sawyer') or env_id.startswith('Point2D') or env_id.startswith('Ant')) and not hasattr(env, '_max_episode_steps'):
         env = gym.wrappers.TimeLimit(env, max_episode_steps=100)
 
     if flatten_dict_observations and isinstance(env.observation_space, gym.spaces.Dict):

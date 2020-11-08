@@ -9,37 +9,15 @@ from baselines.bench.monitor import Monitor
 from baselines.her.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper
 
 DEFAULT_ENV_PARAMS = {
-    'SawyerPush-v0':{
-        'n_cycles':10,
-        'n_batches':5,
-        'n_test_rollouts':50,
-        'batch_size':64,
-        'rollout_batch_size':1
-    },
     'SawyerReachXYZEnv-v1':{
-        'n_cycles':5,
-        'n_batches':2,
-        'n_test_rollouts':50,
-        'batch_size':64
-    },
-    'SawyerDoorOpen-v0':{
         'n_cycles':10,
-        'n_batches':5,
-        'n_test_rollouts':50,
-        'batch_size':128
+    },
+    'SawyerPushAndReachEnvEasy-v0':{
+        'n_cycles':10,
     },
     'FetchReach-v1': {
         'n_cycles': 5,  
-        'n_test_rollouts': 50,
-        'n_batches': 2, 
-        'batch_size': 64,
-    },
-    # 'FetchPush-v1': {
-    #     'n_cycles': 10,  
-    #     'n_test_rollouts': 20,
-    #     'n_batches': 10, 
-    #     'batch_size': 256,
-    # },
+    }
 }
 
 
@@ -168,7 +146,7 @@ def prepare_params(kwargs):
         # add wrapper for multiworld environment
         if env_name.startswith('Point2D'):
             env = PointGoalWrapper(env)
-        elif env_name.startswith('Sawyer'):
+        elif env_name.startswith('Sawyer') or env_name.startswith('Ant'):
             env = SawyerGoalWrapper(env)
 
         if (subrank is not None and logger.get_dir() is not None):

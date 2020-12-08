@@ -79,12 +79,20 @@ def make_env(env_id, env_type, mpi_rank=0, subrank=0, seed=None, reward_scale=1.
         env = retro_wrappers.make_retro(game=env_id, max_episode_steps=10000, use_restricted_actions=retro.Actions.DISCRETE, state=gamestate)
     else:
         env = gym.make(env_id, **env_kwargs)
-    
+
     if env_id.startswith('Sawyer') or env_id.startswith('Ant'):
         from baselines.her.multi_world_wrapper import SawyerGoalWrapper
         env = SawyerGoalWrapper(env)
-    if (env_id.startswith('Sawyer') or env_id.startswith('Point2D') or env_id.startswith('Ant')) and not hasattr(env, '_max_episode_steps'):
+        if not hasattr(env, '_max_episode_steps'):
+            env = gym.wrappers.TimeLimit(env, max_episode_steps=100)
+    elif env_id.startswith('Point2D'):
+        from baselines.her.multi_world_wrapper import PointGoalWrapper
         env = gym.wrappers.TimeLimit(env, max_episode_steps=100)
+        env = PointGoalWrapper(env)
+    elif env_id.startswith('Reacher'):
+        from baselines.her.multi_world_wrapper import ReacherGoalWrapper
+        env._max_episode_steps = 100
+        env = ReacherGoalWrapper(env)
 
     if flatten_dict_observations and isinstance(env.observation_space, gym.spaces.Dict):
         env = FlattenObservation(env)

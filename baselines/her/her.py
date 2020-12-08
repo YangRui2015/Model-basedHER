@@ -37,7 +37,7 @@ def train(*, policy, rollout_worker, evaluator,
         for epi in range(int(random_init) // rollout_worker.rollout_batch_size): 
             episode = rollout_worker.generate_rollouts(random_ac=True)
             policy.store_episode(episode)
-        if policy.use_dynamic_nstep and policy.n_step > 1:
+        if policy.use_dynamic_nstep: #and policy.n_step > 1:
             policy.update_dynamic_model(init=True)
 
     best_success_rate = -1
@@ -46,6 +46,7 @@ def train(*, policy, rollout_worker, evaluator,
     for epoch in range(n_epochs):
         # from baselines.her.util import write_to_file
         # write_to_file('\n epoch: {}'.format(epoch))
+        policy.set_process(epoch / n_epochs)
         time_start = time.time()
         # train
         rollout_worker.clear_history()
@@ -59,6 +60,7 @@ def train(*, policy, rollout_worker, evaluator,
 
         # test
         evaluator.clear_history()
+        evaluator.render = True
         for _ in range(n_test_rollouts):
             evaluator.generate_rollouts()
 
@@ -185,7 +187,6 @@ def learn(*, network, env, num_epoch, total_timesteps,
         eval_params[name] = params[name]
 
     eval_env = eval_env or env
-
     rollout_worker = RolloutWorker(env, policy, dims, logger, monitor=True, **rollout_params)
     evaluator = RolloutWorker(eval_env, policy, dims, logger, **eval_params)
 

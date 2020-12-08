@@ -6,18 +6,72 @@ from baselines import logger
 from baselines.her.ddpg import DDPG
 from baselines.her.her_sampler import make_sample_her_transitions, make_random_sample, obs_to_goal_fun
 from baselines.bench.monitor import Monitor
-from baselines.her.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper
+from baselines.her.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper, ReacherGoalWrapper
 
 DEFAULT_ENV_PARAMS = {
-    'SawyerReachXYZEnv-v1':{
-        'n_cycles':10,
+    'Point2DLargeEnv-v1':{
+         'n_cycles':1,
+         'batch_size':64,
+         'n_batches': 5,
+         'n_test_rollouts': 100,
+         'random_init':100,
+         'dynamic_init':100,
+         'rollout_batch_size': 1,
     },
-    'SawyerPushAndReachEnvEasy-v0':{
-        'n_cycles':10,
+    'Point2D-FourRoom-v1':{
+        'n_cycles':1,
+        'batch_size':64,
+        'n_batches': 5,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':100,
+        'rollout_batch_size': 1,
     },
     'FetchReach-v1': {
         'n_cycles': 5,  
-    }
+        'batch_size':64,
+        'n_batches': 5,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':100,
+        'rollout_batch_size': 1,
+    },
+    'SawyerReachXYZEnv-v1':{
+        'n_cycles':5,
+        'batch_size':64,
+        'n_batches': 5,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':100,
+        'rollout_batch_size': 1,
+    },
+    'Reacher-v2': {
+        'n_cycles': 5,  
+        'batch_size':64,
+        'n_batches': 5,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':100,
+        'rollout_batch_size': 1,
+    },
+    'SawyerPushAndReachEnvEasy-v0':{
+        'n_cycles':20,
+        'batch_size':258,
+        'n_batches': 20,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':200,
+        'rollout_batch_size': 1,
+    },
+    'FetchPush-v1':{
+        'n_cycles':100,
+        'batch_size':258,
+        'n_batches': 20,
+        'n_test_rollouts': 100,
+        'random_init':100,
+        'dynamic_init':200,
+        'rollout_batch_size': 1,
+    },
 }
 
 
@@ -70,7 +124,8 @@ DEFAULT_PARAMS = {
 
     # dynamic n-step
     'use_dynamic_nstep':False, 
-    'alpha':0.5,
+    'alpha':0.4,
+    'mb_relabeling_ratio': 0.5,
     'dynamic_batchsize':512,  # warm up the dynamic model
     'dynamic_init':500,
 
@@ -146,8 +201,11 @@ def prepare_params(kwargs):
         # add wrapper for multiworld environment
         if env_name.startswith('Point2D'):
             env = PointGoalWrapper(env)
+            env.env._max_episode_steps = 300
         elif env_name.startswith('Sawyer') or env_name.startswith('Ant'):
             env = SawyerGoalWrapper(env)
+        elif env_name.startswith('Reacher'):
+            env = ReacherGoalWrapper(env)
 
         if (subrank is not None and logger.get_dir() is not None):
             try:
@@ -170,7 +228,6 @@ def prepare_params(kwargs):
 
         # if (env_name.startswith('Sawyer') or env_name.startswith('Point2D')) and not hasattr(env, '_max_episode_steps'):
         #     env = gym.wrappers.TimeLimit(env, max_episode_steps=default_max_episode_steps)
-            
         return env
 
     kwargs['make_env'] = make_env
@@ -189,7 +246,8 @@ def prepare_params(kwargs):
     for name in ['buffer_size', 'hidden', 'layers','network_class','polyak','batch_size', 
                  'Q_lr', 'pi_lr', 'norm_eps', 'norm_clip', 'max_u','action_l2', 'clip_obs', 
                  'scope', 'relative_goals','use_nstep', 'n_step', 'lamb', 'use_dynamic_nstep', 
-                 'use_lambda_nstep', 'alpha', 'dynamic_init', 'dynamic_batchsize','use_correct_nstep', 'cor_rate']:
+                 'use_lambda_nstep', 'alpha', 'dynamic_init', 'dynamic_batchsize', 'mb_relabeling_ratio',
+                 'use_correct_nstep', 'cor_rate']:
         ddpg_params[name] = kwargs[name]
         kwargs['_' + name] = kwargs[name]
         del kwargs[name]
@@ -281,9 +339,9 @@ def configure_dims(params):
         'u': env.action_space.shape[0],
         'g': obs['desired_goal'].shape[0],
     }
-    for key, value in info.items():
-        value = np.array(value)
-        if value.ndim == 0:
-            value = value.reshape(1)
-        dims['info_{}'.format(key)] = value.shape[0]
+    # for key, value in info.items():
+    #     value = np.array(value)
+    #     if value.ndim == 0:
+    #         value = value.reshape(1)
+    #     dims['info_{}'.format(key)] = value.shape[0]
     return dims

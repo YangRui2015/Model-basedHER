@@ -25,7 +25,7 @@ class DDPG(object):
                  Q_lr, pi_lr, norm_eps, norm_clip, max_u, action_l2, clip_obs, scope, T,
                  rollout_batch_size, subtract_goals, relative_goals, clip_pos_returns, clip_return,
                  sample_transitions, random_sampler, gamma, use_nstep, n_step, nstep_sampler, use_correct_nstep,
-                 cor_rate, nstep_correct_sampler, use_dynamic_nstep, nstep_dynamic_sampler, 
+                 cor_rate, nstep_correct_sampler, use_dynamic_nstep, nstep_dynamic_sampler, mb_relabeling_ratio,
                  dynamic_batchsize, dynamic_init, alpha, use_lambda_nstep, nstep_lambda_sampler,lamb,
                  reuse=False, **kwargs):
         """Implementation of DDPG that is used in combination with Hindsight Experience Replay (HER).
@@ -103,7 +103,10 @@ class DDPG(object):
                 'get_Q_pi':self.get_Q_pi,
                 'dynamic_model':self.dynamic_model,
                 'action_fun':self.action_only,
+                'train_policy':self.train_policy,
+                'get_rate':self.get_process,
                 'alpha':self.alpha,
+                'mb_relabeling_ratio': self.mb_relabeling_ratio,
                 'use_dynamic_nstep':True
             }
         elif self.use_lambda_nstep:
@@ -138,7 +141,13 @@ class DDPG(object):
             sampler = self.sample_transitions
             info = {}
         self.buffer = ReplayBuffer(buffer_shapes, buffer_size, self.T, sampler, info)
+        self.process_rate = 0
 
+    def set_process(self, rate):
+        self.process_rate = rate
+    
+    def get_process(self):
+        return self.process_rate
 
     def _random_action(self, n):
         return np.random.uniform(low=-self.max_u, high=self.max_u, size=(n, self.dimu))
@@ -267,6 +276,20 @@ class DDPG(object):
     def get_current_buffer_size(self):
         return self.buffer.get_current_size()
 
+    def train_policy(self, o, g, u):
+        pi_sl_loss, pi_sl_grad = self.sess.run(
+            [self.policy_sl_loss, self.pi_sl_grad_tf],
+            feed_dict={
+                self.main.o_tf: o,
+                self.main.g_tf: g,
+                self.main.u_tf : u
+            }
+        )
+        self.pi_adam.update(pi_sl_grad, self.pi_lr * 0.01)
+        for _ in range(5):
+            self.update_target_net()
+        return pi_sl_loss
+
     def _sync_optimizers(self):
         self.Q_adam.sync()
         self.pi_adam.sync()
@@ -391,14 +414,20 @@ class DDPG(object):
         self.pi_loss_tf = -tf.reduce_mean(self.main.Q_pi_tf)
         self.pi_loss_tf += self.action_l2 * tf.reduce_mean(tf.square(self.main.pi_tf / self.max_u))
 
+        # training policy with supervised learning
+        self.policy_sl_loss = tf.reduce_mean(tf.square(self.main.u_tf - self.main.pi_tf))  
+
         Q_grads_tf = tf.gradients(self.Q_loss_tf, self._vars('main/Q'))
         pi_grads_tf = tf.gradients(self.pi_loss_tf, self._vars('main/pi'))
+        pi_sl_grads_tf = tf.gradients(self.policy_sl_loss, self._vars('main/pi'))
         assert len(self._vars('main/Q')) == len(Q_grads_tf)
-        assert len(self._vars('main/pi')) == len(pi_grads_tf)
+        assert len(self._vars('main/pi')) == len(pi_grads_tf) and len(self._vars('main/pi')) == len(pi_sl_grads_tf)
         self.Q_grads_vars_tf = zip(Q_grads_tf, self._vars('main/Q'))
         self.pi_grads_vars_tf = zip(pi_grads_tf, self._vars('main/pi'))
+        self.pi_sl_grads_vars_tf = zip(pi_sl_grads_tf, self._vars('main/pi'))
         self.Q_grad_tf = flatten_grads(grads=Q_grads_tf, var_list=self._vars('main/Q'))
         self.pi_grad_tf = flatten_grads(grads=pi_grads_tf, var_list=self._vars('main/pi'))
+        self.pi_sl_grad_tf = flatten_grads(grads=pi_sl_grads_tf, var_list=self._vars('main/pi'))
 
         # optimizers
         self.Q_adam = MpiAdam(self._vars('main/Q'), scale_grad_by_procs=False)

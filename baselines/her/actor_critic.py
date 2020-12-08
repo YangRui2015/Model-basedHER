@@ -41,8 +41,8 @@ class ActorCritic:
             input_Q = tf.concat(axis=1, values=[o, g, self.u_tf / self.max_u])
             self._input_Q = input_Q  # exposed for tests
             self.Q_tf = nn(input_Q, [self.hidden] * self.layers + [1], reuse=True) 
-        with tf.variable_scope('gradient_Q_a'):
-            self.gradient_Q_a = tf.gradients(self.Q_tf, self.u_tf)
+        # with tf.variable_scope('gradient_Q_a'):
+        #     self.gradient_Q_a = tf.gradients(self.Q_tf, self.u_tf)
 
 
     

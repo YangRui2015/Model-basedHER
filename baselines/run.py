@@ -141,12 +141,11 @@ def build_env(args):
                                inter_op_parallelism_threads=1)
         config.gpu_options.allow_growth = True
         get_session(config=config)
-
         flatten_dict_observations = alg not in {'her'}
         env = make_vec_env(env_id, env_type, args.num_env or 1, seed, reward_scale=args.reward_scale, flatten_dict_observations=flatten_dict_observations)
 
-        if env_type == 'mujoco':
-            env = VecNormalize(env, use_tf=True)
+        # if env_type == 'mujoco':
+        #     env = VecNormalize(env, use_tf=True)
 
     return env
 
@@ -157,6 +156,7 @@ def get_env_type(args):
         return args.env_type, env_id
 
     # Re-parse the gym registry, since we could have new envs since last time.
+    
     for env in gym.envs.registry.all():
         try:
             env_type = env.entry_point.split(':')[0].split('.')[-1]

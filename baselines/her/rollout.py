@@ -13,7 +13,6 @@ class RolloutWorker:
                  exploit=False, use_target_net=False, compute_Q=False, noise_eps=0,
                  random_eps=0, history_len=100, render=False, monitor=False, **kwargs):
         """Rollout worker generates experience by interacting with one or many environments.
-
         Args:
             venv: vectorized gym environments.
             policy (object): the policy that is used to act
@@ -88,6 +87,8 @@ class RolloutWorker:
             success = np.zeros(self.rollout_batch_size)
             # compute new states and observations
             obs_dict_new, reward, done, info = self.venv.step(u)
+            # if self.render:
+            #     self.venv.render()
             o_new = obs_dict_new['observation']
             ag_new = obs_dict_new['achieved_goal']
             success = np.array([i.get('is_success', 0.0) for i in info])
@@ -96,6 +97,11 @@ class RolloutWorker:
                 # here we assume all environments are done is ~same number of steps, so we terminate rollouts whenever any of the envs returns done
                 # trick with using vecenvs is not to add the obs from the environments that are "done", because those are already observations
                 # after a reset
+                # if self.render:
+                #     print(reward)
+                    # self.venv.render()
+                    # import time
+                    # time.sleep(0.1)
                 break
 
             for i, info_dict in enumerate(info):
@@ -174,4 +180,3 @@ class RolloutWorker:
             return [(prefix + '/' + key, val) for key, val in logs]
         else:
             return logs
-

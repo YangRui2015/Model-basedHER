@@ -1,6 +1,10 @@
+from tensorflow.python.framework.ops import IndexedSlices
+from baselines.her.util import transitions_in_episode_batch
 import numpy as np
 import gym
 import multiworld
+from numpy.core.defchararray import index
+from numpy.lib.index_tricks import AxisConcatenator
 
 def make_random_sample(reward_fun):
     def _random_sample(episode_batch, batch_size_in_transitions):
@@ -39,6 +43,7 @@ def obs_to_goal_fun(env):
     from multiworld.envs.pygame import point2d
     from multiworld.envs.mujoco.sawyer_xyz import sawyer_push_and_reach_env
     from multiworld.envs.mujoco.sawyer_xyz import sawyer_reach
+    from gym.envs.mujoco import reacher
 
     if isinstance(env.env, FetchEnv):
         obs_dim = env.observation_space['observation'].shape[0]
@@ -67,6 +72,9 @@ def obs_to_goal_fun(env):
     elif isinstance(env.env, sawyer_reach.SawyerReachXYZEnv):
         def obs_to_goal(observation):
             return observation
+    elif isinstance(env.env.env, reacher.ReacherEnv):
+        def obs_to_goal(observation):
+            return observation[:, -3:-1]
     else:
         def obs_to_goal(observation):
             return observation
@@ -123,12 +131,29 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
 
     def _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T):
         her_indexes = (np.random.uniform(size=batch_size) < future_p)
-        future_offset = np.random.uniform(size=batch_size) * (T - t_samples)
+        future_offset = np.random.uniform(size=batch_size) * (T - t_samples)  #np.minimum(T - t_samples, 3)
         future_offset = future_offset.astype(int)
         future_t = (t_samples + 1 + future_offset)[her_indexes]
         future_ag = episode_batch['ag'][episode_idxs[her_indexes], future_t]
         return future_ag.copy(), her_indexes.copy()
 
+    def _get_dynamic_ags(transitions, batch_size, action_fun, model, ratio=0.3, steps=2):
+        indexs = (np.random.uniform(size=batch_size) < ratio)
+        states, goals = transitions['o'][indexs], transitions['g'][indexs]
+        next_states = states
+        for i in range(steps):
+            actions = action_fun(states, goals)
+            next_states = model.predict_next_state(states, actions)
+            states = next_states
+
+        next_goals = obs_to_goal_fun(next_states)
+        return next_goals.copy(), indexs.copy()
+    
+    def _get_ags_from_states(batch_size, states, ratio=0.3):
+        indexs = (np.random.uniform(size=batch_size) < ratio)
+        next_goals = obs_to_goal_fun(states[indexs])
+        return next_goals.copy(), indexs.copy()
+        
     def _reshape_transitions(transitions, batch_size, batch_size_in_transitions):
         transitions = {k: transitions[k].reshape(batch_size, *transitions[k].shape[1:])
                        for k in transitions.keys()}
@@ -243,14 +268,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
 
         return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
 
-    
-    def _sample_nstep_lambda_her_transitions(episode_batch, batch_size_in_transitions, info):
-        steps, gamma, Q_fun, lamb = info['nstep'], info['gamma'], info['get_Q_pi'], info['lamb']
-        transitions, episode_idxs, t_samples, batch_size, T= _preprocess(episode_batch, batch_size_in_transitions)
-        assert steps < T, 'Steps should be much less than T.'
-
-        _random_log('using nstep lambda sampler with step:{} and lamb:{}'.format(steps, lamb))
-
+    def _lambda_nstep_process(episode_batch, transitions, episode_idxs, t_samples, batch_size, T, steps, gamma, lamb, Q_fun):
         n_step_ags = np.zeros((batch_size, steps, episode_batch['ag'].shape[-1]))
         n_step_reward_mask = np.ones((batch_size, steps)) * np.array([pow(gamma,i) for i in range(steps)])
         n_step_o2s= np.zeros((batch_size, steps, episode_batch['o'].shape[-1]))
@@ -285,64 +303,161 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
                         o=n_step_o2s[:,i,:].reshape((batch_size, episode_batch['o'].shape[-1])), 
                         g=transitions['g']).reshape(-1)
             return_array[:, i] = return_i.copy()
-        transitions['r'] = ((return_array * return_mask).sum(axis=1) / return_mask.sum(axis=1)).copy()
+        lambda_return = ((return_array * return_mask).sum(axis=1) / return_mask.sum(axis=1)).copy()
+        return lambda_return
+    
+    def _sample_nstep_lambda_her_transitions(episode_batch, batch_size_in_transitions, info):
+        steps, gamma, Q_fun, lamb = info['nstep'], info['gamma'], info['get_Q_pi'], info['lamb']
+        transitions, episode_idxs, t_samples, batch_size, T= _preprocess(episode_batch, batch_size_in_transitions)
+        assert steps < T, 'Steps should be much less than T.'
+
+        _random_log('using nstep lambda sampler with step:{} and lamb:{}'.format(steps, lamb))
+
+        transitions['r'] = _lambda_nstep_process(episode_batch, transitions, episode_idxs, t_samples, batch_size, T, steps, gamma, lamb, Q_fun)
         return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
 
 
     def _sample_nstep_dynamic_her_transitions(episode_batch, batch_size_in_transitions, info):
         steps, gamma, Q_fun, alpha = info['nstep'], info['gamma'], info['get_Q_pi'], info['alpha']
         dynamic_model, action_fun = info['dynamic_model'], info['action_fun']
-        transitions, episode_idxs, t_samples, batch_size, T= _preprocess(episode_batch, batch_size_in_transitions)
+        dynamic_ag_ratio = info['mb_relabeling_ratio']
+        transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
+        train_policy = info['train_policy']
+        get_rate = info['get_rate']
+        process_rate = get_rate()
 
-        _random_log('using nstep dynamic sampler with step:{} and alpha:{}'.format(steps, alpha))
+        min_rate = 0.1
+        dynamic_ag_ratio_cur = max(dynamic_ag_ratio - min_rate, 0) * (1 - process_rate) + min_rate if dynamic_ag_ratio > 0 else 0
 
+        _random_log('using nstep dynamic sampler with step:{}, alpha:{}, and dynamic relabeling rate:{}'.format(steps, alpha, dynamic_ag_ratio_cur))
         # preupdate dynamic model
-        loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)
-        # print(loss)
+        loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)  
 
-        # Select future time indexes proportional with probability future_p. These
-        # will be used for HER replay by substituting in future goals.
         if not no_her:
             future_ag, her_indexes = _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T)
             transitions['g'][her_indexes] = future_ag
 
-        # Re-compute reward since we may have substituted the goal.
+        # # Re-compute reward since we may have substituted the goal.
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g'])
 
-        ## model-based on-policy
+        ## model-based on-policy, when 1 step then is exactly  
         reward_list = [transitions['r']]
         last_state = transitions['o_2']
-        if steps > 1:
+        if steps > 1 and dynamic_ag_ratio_cur > 0:
+            next_states_list = []
             for _ in range(1, steps):
                 state_array = last_state
                 action_array = action_fun(o=state_array, g=transitions['g'])
                 next_state_array = dynamic_model.predict_next_state(state_array, action_array)
-                # test loss
-                predicted_obs = dynamic_model.predict_next_state(state_array, transitions['u'])
-                loss = np.abs((transitions['o_2'] - predicted_obs)).mean()
+                
                 if np.random.random() < 0.1:
+                    # test loss
+                    predicted_obs = dynamic_model.predict_next_state(transitions['o'], transitions['u'])
+                    loss = np.abs((transitions['o_2'] - predicted_obs)).mean() 
                     print(loss)
-                    # print(transitions['o_2'][0])
-                    # print(predicted_obs[0])
 
-               
-                next_reward = _get_reward(obs_to_goal_fun(next_state_array), transitions['g'])
-                reward_list.append(next_reward.copy())
+                next_states_list.append(next_state_array.copy())
                 last_state = next_state_array
 
-        last_Q = Q_fun(o=last_state, g=transitions['g'])
-        target = 0
-        for i in range(steps):
-            target += pow(gamma, i) * reward_list[i]
-        target += pow(gamma, steps) * last_Q.reshape(-1)
-        transitions['r'] = target.copy()
-        # allievate the model bias
-        if steps > 1:
-            target_step1 = reward_list[0] + gamma * Q_fun(o=transitions['o_2'], g=transitions['g']).reshape(-1)
-            transitions['r'] = (alpha * transitions['r'] + target_step1) / (1 + alpha)
-           
+            # # # add dynamic achieve goals
+            new_ags, indexes = _get_ags_from_states(batch_size, last_state, dynamic_ag_ratio_cur)
+            transitions['g'][indexes] = new_ags
+            train_policy(o=transitions['o'][indexes], g=new_ags, u=transitions['u'][indexes])   #transitions['g'][indexes]
+                
+            # recompute rewards
+            reward_list[0] = _get_reward(transitions['ag_2'], transitions['g'])
+
+        target_step1 = reward_list[0] + gamma * Q_fun(o=transitions['o_2'], g=transitions['g']).reshape(-1)
+        transitions['r'] = target_step1.copy()
+        
         return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
 
     return _sample_her_transitions, _sample_nstep_her_transitions, _sample_nstep_correct_her_transitions, \
              _sample_nstep_lambda_her_transitions , _sample_nstep_dynamic_her_transitions
 
+
+
+
+    # def _sample_nstep_dynamic_her_transitions(episode_batch, batch_size_in_transitions, info):
+    #     steps, gamma, Q_fun, alpha = info['nstep'], info['gamma'], info['get_Q_pi'], info['alpha']
+    #     dynamic_model, action_fun = info['dynamic_model'], info['action_fun']
+    #     dynamic_ag_ratio = info['mb_relabeling_ratio']
+    #     transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
+
+    #     _random_log('using nstep dynamic sampler with step:{}, alpha:{}, and dynamic relabeling rate:{}'.format(steps, alpha, dynamic_ag_ratio))
+
+    #     # preupdate dynamic model
+    #     loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)  
+    #     # if np.random.random() < 0.1:
+    #     #     print(loss)
+
+    #     # Select future time indexes proportional with probability future_p. These
+    #     # will be used for HER replay by substituting in future goals.
+    #     if not no_her:
+    #         future_ag, her_indexes = _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T)
+    #         transitions['g'][her_indexes] = future_ag
+
+    #     # Re-compute reward since we may have substituted the goal.
+    #     transitions['r'] = _get_reward(transitions['ag_2'], transitions['g'])
+
+    #     ## model-based on-policy, when 1 step then is exactly  
+    #     reward_list = [transitions['r']]
+    #     last_state = transitions['o_2']
+
+    #     if steps > 1:
+    #         next_states_list = []
+    #         for _ in range(1, steps):
+    #             state_array = last_state
+    #             action_array = action_fun(o=state_array, g=transitions['g'])
+    #             next_state_array = dynamic_model.predict_next_state(state_array, action_array)
+                
+    #             if np.random.random() < 0.1:
+    #                 # test loss
+    #                 predicted_obs = dynamic_model.predict_next_state(transitions['o'], transitions['u'])
+    #                 loss = np.abs((transitions['o_2'] - predicted_obs)).mean() 
+    #                 print(loss)
+
+    #             next_states_list.append(next_state_array.copy())
+    #             last_state = next_state_array
+
+    #         # # # add dynamic achieve goals
+    #         # if dynamic_ag_ratio >= 0:
+                
+    #         #     new_ags, indexes = _get_ags_from_states(batch_size, last_state, dynamic_ag_ratio)
+    #         #     transitions['g'][indexes] = new_ags
+                
+    #             # clip ags do not work on 
+    #             # real_ags = obs_to_goal_fun(state_array[her_indexes])
+    #             # less_idx, more_idx = np.where(new_ags < real_ags), np.where(new_ags >= real_ags)
+    #             # new_ags[less_idx] = np.clip(new_ags[less_idx], real_ags[less_idx] - 0.2 * np.abs(real_ags[less_idx]), real_ags[less_idx] - 0.02 * np.abs(real_ags[less_idx]) )
+    #             # new_ags[more_idx] = np.clip(new_ags[more_idx], real_ags[more_idx] + 0.02 * np.abs(real_ags[more_idx]),  + real_ags[more_idx] + 0.2 * np.abs(real_ags[more_idx]))
+    #             # FetchReach 0.02, 
+    #             # new_ags = np.clip(new_ags, real_ags - 0.2 * np.abs(real_ags), real_ags + 0.2 * np.abs(real_ags))
+
+    #             # if np.random.random()  < 0.05:
+    #             #     relative_goal_dis = ((new_ags - real_ags) / real_ags).mean(axis=0)
+    #             #     print(relative_goal_dis)
+    #             # print(((new_ags - real_ags) / np.abs(real_ags)).mean(axis=0), ((future_ag - real_ags)/ np.abs(real_ags)).mean(axis=0))
+    #             # print(_get_reward(transitions['ag_2'], transitions['g']).mean())
+                
+    #             # new_reward = _get_reward(new_ags, transitions['ag_2'][indexes])
+    #             # print(new_reward.mean())
+                
+    #         # recompute rewards
+    #         reward_list[0] = _get_reward(transitions['ag_2'], transitions['g'])
+    #         for j in range(steps - 1):
+    #             next_reward = _get_reward(obs_to_goal_fun(next_states_list[j]), transitions['g'])
+    #             reward_list.append(next_reward.copy())
+
+    #     last_Q = Q_fun(o=last_state, g=transitions['g'])
+    #     target = 0
+    #     for i in range(steps):
+    #         target += pow(gamma, i) * reward_list[i]
+    #     target += pow(gamma, steps) * last_Q.reshape(-1)
+    #     transitions['r'] = target.copy()
+    #     # allievate the model bias
+    #     if steps > 1:
+    #         target_step1 = reward_list[0] + gamma * Q_fun(o=transitions['o_2'], g=transitions['g']).reshape(-1)
+    #         transitions['r'] = (alpha * transitions['r'] + target_step1) / (1 + alpha)
+        
+    #     return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)

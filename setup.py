@@ -12,7 +12,6 @@ extras = {
         'filelock',
         'pytest',
         'pytest-forked',
-        'atari-py',
         'matplotlib',
         'pandas'
     ],
@@ -27,9 +26,9 @@ for group_name in extras:
 
 extras['all'] = all_deps
 
-setup(name='baselines',
+setup(name='mher',
       packages=[package for package in find_packages()
-                if package.startswith('baselines')],
+                if package.startswith('mher')],
       install_requires=[
           'gym>=0.15.4, <0.16.0',
           'scipy',
@@ -37,14 +36,10 @@ setup(name='baselines',
           'joblib',
           'cloudpickle',
           'click',
-          'opencv-python'
       ],
       extras_require=extras,
-      description='Multi-step HER supports multi-step HER and is revised from OpenAI baselines.',
-      author='',
-      url='https://github.com/YangRui2015/Multi-step-HER',
-      author_email='yangrui19@mails.tsinghua.edu.cn',
-      version='0.1.6')
+      description='Model-based Hindsight Experience Replay.',
+      version='0.1')
 
 
 # ensure there is some tensorflow build with version above 1.4

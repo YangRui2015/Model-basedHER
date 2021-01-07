@@ -1,5 +1,13 @@
-# Multi-step HER
-Multi-step HER supports multi-step HER and is revised from OpenAI baselines.
+# Model-based Hindsight Experience Replay(MHER)
+MHER utilizes model-based relabeling (MBR) and model-based goal-conditioned supervised learning (MGSL) to improve sample efficiency in multi-goal RL with sparse rewards.
+
+<div style="text-align: center;">
+<img src="pics/model-based-relabeling.png" height=250 >
+</div>
+
+
+## Requirements
+python3.6+, tensorflow, gym, mujoco, mpi4py
 
 ## Installation
 - Clone the repo and cd into it:
@@ -13,43 +21,25 @@ Multi-step HER supports multi-step HER and is revised from OpenAI baselines.
 ## Usage
 DDPG:
 ```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12 --noher True --log_path=~/logs/FetchPush_env12/ --save_path=~/ddpg/fetchpush/
-```
-$\lambda$ n-step DDPG:
-```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12 --mode lambda --lamb 0.7 --n_step 2 --noher True --log_path=~/logs/FetchPush_env12/ --save_path=~/lddpg/fetchpush/
-```
-Model-based n-step DDPG:
-```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12 --mode dynamic --alpha 0.5 --n_step 2 --noher True --log_path=~/logs/FetchPush_env12/ --save_path=~/mddpg/fetchpush/
+python -m  mher.run  --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1 --noher True --log_path=~/logs/fetchpush/ --save_path=~/logs/ddpg/fetchpush/model/
 ```
 HER:
 ```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12 --log_path=~/logs/FetchPush_env12/ --save_path=~/her/fetchpush/
+python -m  mher.run  --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1 
 ```
-HER + Multi-step:
+GCSL:
 ```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12  --n_step 2 --mode nstep --log_path=~/logs/FetchPush_env12_nstep_2/ --save_path=~/policies/nstepher/fetchpush/
+python -m  mher.run  --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1 --mode supervised
 ```
-HER + Correction:
+MHER:
 ```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12  --n_step 2 --mode correct --cor_rate 1 --log_path=~/logs/FetchPush_env12_nstep_2/ --save_path=~/policies/nstepher/fetchpush/
+python -m  mher.run --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1  --n_step 5 --mode dynamic --alpha 3 --mb_relabeling_ratio 0.8 
 ```
-NHER($\lambda$):
+MHER without MGSL (DDPG + MBR)
 ```bash
-python -m  baselines.run  --env=FetchPush-v1 --num_epoch 50 --num_env 12  --n_step 2 --mode lambda --lamb 0.7 --log_path=~/logs/FetchPush_env12_nstep_2/ --save_path=~/policies/nher_lambda/fetchpush/
+python -m  mher.run --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1  --n_step 5 --mode dynamic --alpha 0 --mb_relabeling_ratio 0.8  --no_mgsl True 
 ```
-Model-based NHER:
+MHER without MBR (DDPG + MGSL)
 ```bash
-python -m  baselines.run --env=FetchPush-v1 --num_epoch 50 --num_env 12  --n_step 2 --mode dynamic --alpha 0.5 --log_path=~/logs/FetchPush_env12_nstep_2/ --save_path=~/policies/mnher/fetchpush/
+python -m  mher.run --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1  --n_step 5 --mode dynamic --mb_relabeling_ratio 0.8  --no_mb_relabel True
 ```
-
-
-## Update
-* 6.11 first update of n-step her, add support of num_epoch;
-* 7.02 update action threshold method for correction;
-* 7.12 update taylor correction;
-* 8.2 update lambda multi-step HER
-* 8.23 update model-based multi-step HER
-* 10.28 merge old code and new code, update readme
-

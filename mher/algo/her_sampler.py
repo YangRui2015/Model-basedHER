@@ -120,9 +120,9 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         reward_params['info'] = info
         return reward_fun(**reward_params)
 
-    def _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T, future_p=future_p, max_steps=np.inf):
+    def _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T, future_p=future_p):
         her_indexes = (np.random.uniform(size=batch_size) < future_p)
-        future_offset = np.random.uniform(size=batch_size) * np.minimum(T - t_samples, max_steps)  # max_steps
+        future_offset = np.random.uniform(size=batch_size) * (T - t_samples)  
         future_offset = future_offset.astype(int)
         future_t = (t_samples + 1 + future_offset)[her_indexes]
         future_ag = episode_batch['ag'][episode_idxs[her_indexes], future_t]
@@ -210,12 +210,11 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
 
     def _sample_nstep_supervised_her_transitions(episode_batch, batch_size_in_transitions, info):
-        steps = info['horizon']
         transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
         train_policy = info['train_policy']
 
-        _random_log('using nstep supervide policy learning with max step:{}'.format(steps))
-        future_ag, her_indexes = _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T, future_p=1, max_steps=steps)
+        _random_log('using nstep supervide policy learning')
+        future_ag, her_indexes = _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T, future_p=1)
         transitions['g'][her_indexes] = future_ag
         loss = train_policy(o=transitions['o'], g=transitions['g'], u=transitions['u'])   
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g']) # no need, but in order to unify

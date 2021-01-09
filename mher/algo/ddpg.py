@@ -26,7 +26,7 @@ class DDPG(object):
                  rollout_batch_size, subtract_goals, relative_goals, clip_pos_returns, clip_return,
                  sample_transitions, random_sampler, gamma,  n_step, use_dynamic_nstep, 
                  nstep_dynamic_sampler, mb_relabeling_ratio,dynamic_batchsize, dynamic_init, 
-                 alpha, no_mb_relabel, no_mgsl, nstep_supervised_sampler, use_supervised, supervised_horizon,
+                 alpha, no_mb_relabel, no_mgsl, nstep_supervised_sampler, use_supervised, 
                   reuse=False, **kwargs):
         """Implementation of DDPG that is used in combination with Hindsight Experience Replay (HER).
         """
@@ -93,7 +93,6 @@ class DDPG(object):
         elif self.use_supervised:
             sampler = self.nstep_supervised_sampler
             info = {
-                'horizon':self.supervised_horizon,
                 'use_supervised':True,
                 'train_policy':self.train_policy
             }

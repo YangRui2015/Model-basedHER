@@ -106,7 +106,6 @@ DEFAULT_PARAMS = {
     
     # use supervised
     'use_supervised': False,
-    'supervised_horizon': np.inf,
 
     # if do not use her
     'no_her':False    # used for DDPG 
@@ -208,7 +207,7 @@ def prepare_params(kwargs):
                  'Q_lr', 'pi_lr', 'norm_eps', 'norm_clip', 'max_u','action_l2', 'clip_obs', 
                  'scope', 'relative_goals', 'n_step', 'use_dynamic_nstep', 
                  'alpha', 'dynamic_init', 'dynamic_batchsize', 'mb_relabeling_ratio',
-                 'no_mb_relabel', 'no_mgsl','use_supervised', 'supervised_horizon']:
+                 'no_mb_relabel', 'no_mgsl','use_supervised']:
         ddpg_params[name] = kwargs[name]
         kwargs['_' + name] = kwargs[name]
         del kwargs[name]

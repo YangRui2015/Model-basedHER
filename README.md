@@ -19,7 +19,8 @@ python3.6+, tensorflow, gym, mujoco, mpi4py
 
 
 ## Usage
-Environments: Point2DLargeEnv-v1, Point2D-FourRoom-v1, FetchReach-v1, SawyerReachXYZEnv-v1, Reacher-v2
+Environments: Point2DLargeEnv-v1, Point2D-FourRoom-v1, FetchReach-v1, SawyerReachXYZEnv-v1, Reacher-v2.
+
 DDPG:
 ```bash
 python -m  mher.run  --env=Point2DLargeEnv-v1 --num_epoch 30 --num_env 1 --noher True --log_path=~/logs/point/ --save_path=~/logs/ddpg/point/model/

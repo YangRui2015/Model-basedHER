@@ -1,5 +1,5 @@
 # Model-based Hindsight Experience Replay(MHER)
-MHER utilizes model-based relabeling (MBR) and model-based goal-conditioned supervised learning (MGSL) to improve sample efficiency in multi-goal RL with sparse rewards.
+MHER utilizes model-based relabeling (MBR) and using MBR data for goal-conditioned supervised learning (MGSL) to improve sample efficiency in multi-goal RL with sparse rewards.
 
 <div style="text-align: center;">
 <img src="pics/model-based-relabeling.png" height=250 >

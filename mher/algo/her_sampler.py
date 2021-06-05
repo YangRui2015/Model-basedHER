@@ -33,7 +33,6 @@ def make_random_sample(reward_fun):
     return _random_sample
         
 def obs_to_goal_fun(env):
-    # only support Fetchenv and Handenv now
     from gym.envs.robotics import FetchEnv, hand_env
     from mher.envs import point2d
     from mher.envs import sawyer_reach
@@ -93,7 +92,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         print( '*' * 10 + 'Do not use HER in this method' + '*' * 10)
     
     def _random_log(string):
-        if np.random.random() < 0.1:
+        if np.random.random() < 0.05:
             print(string)
     
     def _preprocess(episode_batch, batch_size_in_transitions):
@@ -112,10 +111,6 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
     def _get_reward(ag_2, g):
         # Reconstruct info dictionary for reward  computation.
         info = {}
-        # for key, value in transitions.items():
-        #     if key.startswith('info_'):
-        #         info[key.replace('info_', '')] = value
-        # Re-compute reward since we may have substituted the goal.
         reward_params = {'ag_2':ag_2, 'g':g}
         reward_params['info'] = info
         return reward_fun(**reward_params)
@@ -135,11 +130,11 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         next_goals = obs_to_goal_fun(states[indexs])
         return next_goals.copy(), indexs.copy()
         
-    def _reshape_transitions(transitions, batch_size, batch_size_in_transitions):
+    def _reshape_transitions(transitions, batch_size):
         transitions = {k: transitions[k].reshape(batch_size, *transitions[k].shape[1:])
                        for k in transitions.keys()}
 
-        assert(transitions['u'].shape[0] == batch_size_in_transitions)
+        assert(transitions['u'].shape[0] == batch_size)
         return transitions
 
 
@@ -152,7 +147,38 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
             transitions['g'][her_indexes] = future_ag
 
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g'])
-        return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
+        return _reshape_transitions(transitions, batch_size)
+    def _dynamic_interaction_full(o, g, action_fun, dynamic_model, steps):
+        batch_size = o.shape[0]
+        last_state = o.copy()
+        states_list,actions_list, next_states_list = [], [], []
+        goals_list, ags_list, next_ags_list, reward_list = [], [], [], []
+        for _ in range(0, steps):
+            goals_list.append(g.copy())
+            states_list.append(last_state.copy())
+            ag_array = obs_to_goal_fun(last_state).copy()
+            ags_list.append(ag_array)
+
+            action_array = action_fun(o=last_state, g=g) 
+            action_array += 0.2 * np.random.randn(*action_array.shape)  # gaussian noise
+            action_array = np.clip(action_array, -1, 1)
+            next_state_array = dynamic_model.predict_next_state(last_state, action_array)
+
+            actions_list.append(action_array.copy())
+            next_states_list.append(next_state_array.copy())
+            next_ag_array = obs_to_goal_fun(next_state_array).copy()
+            next_ags_list.append(next_ag_array)
+            reward_list.append(_get_reward(next_ag_array, g))
+            last_state = next_state_array
+        transitions = {}
+        transitions['o'] = np.concatenate(states_list,axis=0).reshape(batch_size * steps, -1) 
+        transitions['o_2'] = np.concatenate(next_states_list,axis=0).reshape(batch_size * steps, -1) 
+        transitions['ag'] = np.concatenate(ags_list,axis=0).reshape(batch_size * steps, -1) 
+        transitions['ag_2'] = np.concatenate(next_ags_list,axis=0).reshape(batch_size * steps, -1) 
+        transitions['g'] = np.concatenate(goals_list,axis=0).reshape(batch_size * steps, -1) 
+        transitions['r'] = np.concatenate(reward_list,axis=0).reshape(batch_size * steps, -1)
+        transitions['u'] = np.concatenate(actions_list,axis=0).reshape(batch_size * steps, -1)
+        return transitions
 
     def _dynamic_interaction(o, g, action_fun, dynamic_model, steps):
         last_state = o.copy()
@@ -164,6 +190,43 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
             last_state = next_state_array
         return next_states_list
 
+    def _sample_mve_transitions(episode_batch, batch_size_in_transitions, info):
+        steps, gamma, Q_fun = info['nstep'], info['gamma'], info['get_Q_pi']
+        dynamic_model, action_fun = info['dynamic_model'], info['action_fun']
+        transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
+
+        _random_log('using goal mve sampler with step:{}'.format(steps))
+        # update dynamic model
+        loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)  
+
+        last_state = transitions['o_2'].copy()  
+        next_states_list = _dynamic_interaction(last_state, transitions['g'], action_fun, dynamic_model, steps-1)
+        next_states_list.insert(0, last_state.copy())
+        reward_lis = []
+        for next_state in next_states_list:
+            reward = _get_reward(obs_to_goal_fun(next_state), transitions['g'])
+            reward_lis.append(reward.copy())
+        target = 0
+        for i in range(0, steps):
+            target += pow(gamma, i) * reward_lis[i]
+        target += pow(gamma, steps) * Q_fun(next_states_list[-1], transitions['g']).reshape(-1)
+        transitions['r'] = target.copy()
+        return _reshape_transitions(transitions, batch_size)
+
+    def _sample_mbpo_transitions(episode_batch, batch_size_in_transitions, info):
+        dynamic_model, action_fun, steps = info['dynamic_model'], info['action_fun'], info['nstep']
+        model_samples_buffer = info['model_buffer']
+        transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
+
+        _random_log('using goal mbpo sampler with step:{}'.format(steps))
+        # update dynamic model
+        loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)  
+        model_transitions = _dynamic_interaction_full(transitions['o'], transitions['g'], action_fun, dynamic_model, steps)
+        model_samples_buffer.store_transitions(model_transitions)
+        sample_model_batches = model_samples_buffer.sample(batch_size)
+        return _reshape_transitions(sample_model_batches, batch_size)
+
+
     def _sample_nstep_dynamic_her_transitions(episode_batch, batch_size_in_transitions, info):
         steps, gamma, Q_fun, alpha = info['nstep'], info['gamma'], info['get_Q_pi'], info['alpha']
         dynamic_model, action_fun = info['dynamic_model'], info['action_fun']
@@ -172,17 +235,15 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         train_policy, no_mb_relabel, no_mgsl = info['train_policy'], info['no_mb_relabel'], info['no_mgsl']
         dynamic_ag_ratio_cur = dynamic_ag_ratio
 
-        _random_log('using nstep dynamic sampler with step:{}, alpha:{}, and dynamic relabeling rate:{}'.format(steps, alpha, dynamic_ag_ratio_cur))
+        _random_log('using mher with step:{}, alpha:{}, and dynamic relabeling rate:{}'.format(steps, alpha, dynamic_ag_ratio_cur))
         # update dynamic model
         loss = dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'], times=2)  
-        if np.random.random() < 0.01:
-            print(loss)
 
         relabel_indexes = (np.random.uniform(size=batch_size) < dynamic_ag_ratio_cur)
         # # Re-compute reward since we may have substituted the goal.
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g'])
 
-        # model-based augmentations
+        # model-based relabeling
         last_state = transitions['o_2'].copy()  
         if dynamic_ag_ratio_cur > 0:
             next_states_list = _dynamic_interaction(last_state, transitions['g'], action_fun, dynamic_model, steps)
@@ -194,7 +255,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
             new_ags, _= _get_ags_from_states(batch_size, last_state, 1)
             
             if not no_mb_relabel:
-                transitions['g'][relabel_indexes] = new_ags[relabel_indexes]  
+                transitions['g'][relabel_indexes] = new_ags[relabel_indexes].reshape((relabel_indexes.sum(), -1)) 
 
             transitions['idxs'] = relabel_indexes.copy()
             if not no_mgsl and no_mb_relabel:
@@ -206,8 +267,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
 
         target_step1 = transitions['r'] + gamma * Q_fun(o=transitions['o_2'], g=transitions['g']).reshape(-1)
         transitions['r'] = target_step1.copy()
-        
-        return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
+        return _reshape_transitions(transitions, batch_size)
 
     def _sample_nstep_supervised_her_transitions(episode_batch, batch_size_in_transitions, info):
         transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
@@ -218,7 +278,8 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         transitions['g'][her_indexes] = future_ag
         loss = train_policy(o=transitions['o'], g=transitions['g'], u=transitions['u'])   
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g']) # no need, but in order to unify
-        return _reshape_transitions(transitions, batch_size, batch_size_in_transitions)
+        return _reshape_transitions(transitions, batch_size)
 
-    return _sample_her_transitions, _sample_nstep_dynamic_her_transitions, _sample_nstep_supervised_her_transitions
+    return _sample_her_transitions, _sample_nstep_dynamic_her_transitions, _sample_nstep_supervised_her_transitions, \
+             _sample_mve_transitions, _sample_mbpo_transitions
 

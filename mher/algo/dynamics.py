@@ -39,7 +39,7 @@ def _vars(scope):
 # numpy forward dynamics
 class ForwardDynamicsNumpy:
     @store_args
-    def __init__(self, dimo, dimu, clip_norm=5, norm_eps=1e-4, hidden=256, layers=8, learning_rate=1e-3):
+    def __init__(self, dimo, dimu, clip_norm=5, norm_eps=1e-4, hidden=256, layers=4, learning_rate=1e-3):
         self.obs_normalizer = NormalizerNumpy(size=dimo, eps=norm_eps)
         self.action_normalizer = NormalizerNumpy(size=dimu, eps=norm_eps)
         self.sess = U.get_session()
@@ -76,9 +76,7 @@ class ForwardDynamicsNumpy:
         return obs1_norm
     
     def clip_gauss_noise(self, size):
-        clip_range = 0.002
-        std = 0.001
-        return np.clip(np.random.normal(0, std, size), -clip_range, clip_range)
+        return 0
     
     def update(self, obs0, actions, obs1, times=1):
         self.obs_normalizer.update(obs0)

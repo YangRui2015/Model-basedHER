@@ -8,7 +8,7 @@ from mher.common import logger
 from mher.algo.util import (
     import_function, store_args, flatten_grads, transitions_in_episode_batch)
 from mher.algo.normalizer import Normalizer
-from mher.algo.replay_buffer import ReplayBuffer
+from mher.algo.replay_buffer import ReplayBuffer, SimpleReplayBuffer
 from mher.common.mpi_adam import MpiAdam
 from mher.common import tf_util
 from mher.algo.dynamics import ForwardDynamicsNumpy
@@ -27,8 +27,8 @@ class DDPG(object):
                  sample_transitions, random_sampler, gamma,  n_step, use_dynamic_nstep, 
                  nstep_dynamic_sampler, mb_relabeling_ratio,dynamic_batchsize, dynamic_init, 
                  alpha, no_mb_relabel, no_mgsl, nstep_supervised_sampler, use_supervised, 
-                  reuse=False, **kwargs):
-        """Implementation of DDPG that is used in combination with Hindsight Experience Replay (HER).
+                 use_mve, mve_sampler, use_mbpo, mbpo_sampler, reuse=False, **kwargs):
+        """Implementation of DDPG agent that is used in combination with Hindsight Experience Replay (HER).
         """
         if self.clip_return is None:
             self.clip_return = np.inf
@@ -95,6 +95,24 @@ class DDPG(object):
             info = {
                 'use_supervised':True,
                 'train_policy':self.train_policy
+            }
+        elif self.use_mve:
+            sampler = self.mve_sampler
+            info = {
+                'nstep':self.n_step,
+                'gamma':self.gamma,
+                'get_Q_pi':self.get_Q_pi,
+                'dynamic_model':self.dynamic_model,
+                'action_fun':self.action_only,
+            }
+        elif self.use_mbpo:
+            sampler = self.mbpo_sampler
+            model_buffer = SimpleReplayBuffer(buffer_size, self.dimo, self.dimg, self.dimu)
+            info = {
+                'nstep':self.n_step,
+                'dynamic_model':self.dynamic_model,
+                'action_fun': self.action_only,
+                'model_buffer':model_buffer,
             }
         else: 
             sampler = self.sample_transitions
@@ -243,8 +261,8 @@ class DDPG(object):
             }
         )
         if not self.use_supervised:
-            self.pi_adam.update(pi_sl_grad, self.pi_lr)  # 0.1
-            for _ in range(3):  # 5
+            self.pi_adam.update(pi_sl_grad, self.pi_lr)  
+            for _ in range(3):  
                 self.update_target_net()
         else:
             self.pi_adam.update(pi_sl_grad, self.pi_lr)
@@ -257,18 +275,12 @@ class DDPG(object):
 
     def _grads(self):
         # Avoid feed_dict here for performance!
-        critic_loss, actor_loss, Q_grad, pi_grad = self.sess.run([  # policy_sl_loss_dim, temp_sl_loss, temp_pi_loss, action_loss 
+        critic_loss, actor_loss, Q_grad, pi_grad = self.sess.run([  
             self.Q_loss_tf,
             self.main.Q_pi_tf,
             self.Q_grad_tf,
             self.pi_grad_tf,  
-            # self.policy_sl_loss_dim ,
-            # self.temp_sl_loss,
-            # self.temp_pi_loss,
-            # self.temp_action_loss,
         ])
-        # if np.random.random() < 0.1:
-        #     import pdb; pdb.set_trace()
         return critic_loss, actor_loss, Q_grad, pi_grad
 
     def _update(self, Q_grad, pi_grad):
@@ -375,7 +387,7 @@ class DDPG(object):
         # loss functions
         target_Q_pi_tf = self.target.Q_pi_tf
         clip_range = (-self.clip_return, 0. if self.clip_pos_returns else np.inf)
-        if self.use_dynamic_nstep:   
+        if self.use_dynamic_nstep or self.use_mve:   
             target_tf = tf.clip_by_value(batch_tf['r'] , *clip_range)  # lambda target 
         else:
             target_tf = tf.clip_by_value(batch_tf['r'] + self.gamma * target_Q_pi_tf, *clip_range)

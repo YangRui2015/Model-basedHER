@@ -8,7 +8,7 @@ from mher.common import logger
 from mher.common import tf_util
 from mher.common.util import set_global_seeds
 from mher.common.mpi_moments import mpi_moments
-import mher.algo.experiment.config as config
+import mher.algo.config as config
 from mher.algo.rollout import RolloutWorker
 from mher.algo.util import dump_params
 

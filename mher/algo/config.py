@@ -127,20 +127,25 @@ def cached_make_env(make_env):
     return CACHED_ENVS[make_env]
 
 def prepare_mode(kwargs):
+    # set default as false
+    kwargs['use_dynamic_nstep'] = False
+    kwargs['use_supervised'] = False
+    kwargs['use_mve'] = False
+    kwargs['use_mbpo'] = False
     if 'mode' in kwargs.keys():
         mode = kwargs['mode']
         if mode == 'dynamic':
             kwargs['use_dynamic_nstep'] = True
-            kwargs['use_supervised'] = False
         elif mode == 'supervised':
             kwargs['use_supervised'] = True
-            kwargs['use_dynamic_nstep'] = False
+        elif mode == 'mbpo':
+            kwargs['use_mbpo'] = True
+        elif mode == 'mve':
+            kwargs['use_mve'] = True
         else:
-            logger.log('No such mode!')
-            raise NotImplementedError()
+            # using HER as default
+            kwargs['n_step'] = 1
     else:
-        kwargs['use_dynamic_nstep'] = False
-        kwargs['use_supervised'] = False
         kwargs['n_step'] = 1
 
     return kwargs
@@ -207,7 +212,7 @@ def prepare_params(kwargs):
                  'Q_lr', 'pi_lr', 'norm_eps', 'norm_clip', 'max_u','action_l2', 'clip_obs', 
                  'scope', 'relative_goals', 'n_step', 'use_dynamic_nstep', 
                  'alpha', 'dynamic_init', 'dynamic_batchsize', 'mb_relabeling_ratio',
-                 'no_mb_relabel', 'no_mgsl','use_supervised']:
+                 'no_mb_relabel', 'no_mgsl','use_supervised', 'use_mve', 'use_mbpo']:
         ddpg_params[name] = kwargs[name]
         kwargs['_' + name] = kwargs[name]
         del kwargs[name]
@@ -240,13 +245,16 @@ def configure_her(params):
         params['_' + name] = her_params[name]
         del params[name]
 
-    sample_her, sample_nstep_dynamic_her, sample_nstep_supervised_her = make_sample_her_transitions(**her_params)
+    sample_her, sample_nstep_dynamic_her, sample_nstep_supervised_her,\
+            sample_mve, sample_mbpo = make_sample_her_transitions(**her_params)
     random_sampler = make_random_sample(her_params['reward_fun'])
     samplers = {
         'her': sample_her,
         'random': random_sampler,
         'dynamic':sample_nstep_dynamic_her,
-        'supervised':sample_nstep_supervised_her
+        'supervised':sample_nstep_supervised_her,
+        'mve':sample_mve,
+        'mbpo': sample_mbpo,
     }
     return samplers, reward_fun
 
@@ -274,6 +282,8 @@ def configure_ddpg(dims, params, reuse=False, use_mpi=True, clip_return=True):
                         'random_sampler':samplers['random'],
                         'nstep_dynamic_sampler':samplers['dynamic'],
                         'nstep_supervised_sampler':samplers['supervised'],
+                        'mve_sampler':samplers['mve'],
+                        'mbpo_sampler':samplers['mbpo'],
                         'gamma': params['gamma'],
                         })
     ddpg_params['info'] = {

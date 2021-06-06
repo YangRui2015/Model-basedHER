@@ -4,7 +4,7 @@ import gym
 
 from mher.common import logger
 from mher.algo.ddpg import DDPG
-from mher.algo.her_sampler import make_sample_her_transitions, make_random_sample, obs_to_goal_fun
+from mher.algo.samplers import make_sample_her_transitions, make_random_sample, obs_to_goal_fun
 from mher.common.monitor import Monitor
 from mher.envs.multi_world_wrapper import PointGoalWrapper, SawyerGoalWrapper, ReacherGoalWrapper
 
@@ -92,10 +92,10 @@ DEFAULT_PARAMS = {
     # random init episode
     'random_init':100, 
 
-    # n step hindsight experience
+    # n step for experience replay
     'n_step':3,
 
-    # dynamic n-step
+    # model-based her
     'use_dynamic_nstep':False,  
     'alpha':3,
     'mb_relabeling_ratio': 0.8,
@@ -104,8 +104,10 @@ DEFAULT_PARAMS = {
     'dynamic_batchsize':512,  # warm up the dynamic model
     'dynamic_init':100,
     
-    # use supervised
+    # mode
     'use_supervised': False,
+    'use_mve':False,
+    'use_mbpo':False,
 
     # if do not use her
     'no_her':False    # used for DDPG 

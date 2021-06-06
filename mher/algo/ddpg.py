@@ -294,8 +294,6 @@ class DDPG(object):
         for _ in range(times):
             transitions = self.buffer.sample(self.dynamic_batchsize, random=True)
             loss = self.dynamic_model.update(transitions['o'], transitions['u'], transitions['o_2'])
-            if np.random.random() < 0.05:
-                print(loss)
 
     def sample_batch(self, method='list'):
         transitions = self.buffer.sample(self.batch_size)   #otherwise only sample from primary buffer

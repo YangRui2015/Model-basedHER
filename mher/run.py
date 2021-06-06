@@ -11,7 +11,7 @@ from mher.common.env_util import get_env_type, build_env, get_game_envs
 from mher.common.parse_args import common_arg_parser, parse_unknown_args
 from mher.common import logger
 from mher.common.parse_args import get_learn_function_defaults, parse_cmdline_kwargs, parse_unknown_args
-from mher.algo.her import learn
+from mher.algo.train import learn
 from mher.util import init_logger
 
 

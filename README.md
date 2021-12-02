@@ -1,5 +1,5 @@
 # Model-based Hindsight Experience Replay(MHER)
-Code for Model-based Hindisight Experience Replay (MHER). MHER is a novel algorithm leveraging model-based achieved goals for both goal relabeling and policy improvement.
+Code for Model-based Hindisight Experience Replay (MHER) https://arxiv.org/abs/2107.00306 . MHER is a novel algorithm leveraging model-based achieved goals for both goal relabeling and policy improvement.
 
 <div style="text-align: center;">
 <img src="pics/diagram.png"  >

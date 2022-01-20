@@ -73,7 +73,10 @@ class ReplayBuffer:
             # load inputs into buffers
             for key in episode_batch.keys():
                 if key in self.buffers:
-                    self.buffers[key][idxs] = episode_batch[key]
+                    if len(episode_batch[key].shape) == 2:
+                        self.buffers[key][idxs] = episode_batch[key].reshape(*episode_batch[key].shape[:2], 1)
+                    else:
+                        self.buffers[key][idxs] = episode_batch[key]
 
             self.n_transitions_stored += batch_size * self.T
 

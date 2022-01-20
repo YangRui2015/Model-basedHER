@@ -129,18 +129,26 @@ class SawyerGoalWrapper(Wrapper):
         self.env = env
         self.action_space = env.action_space
         # observation
+        
         for key in list(env.observation_space.spaces.keys()):
             if key not in self.observation_keys:
                 del env.observation_space.spaces[key]
 
         self.observation_space = env.observation_space
         self.reward_type = reward_type
+        if hasattr(self.env, 'puck_space'):
+            self.reward_type = 'puck_success'
+            self.env.reward_type = 'puck_success'
+            if hasattr(self.env, 'env') and hasattr(self.env.env, 'reward_type'):
+                self.env.env.reward_type = 'puck_success'
+        else:
+            if hasattr(self.env, 'reward_type'):
+                self.env.reward_type = self.reward_type_dict[self.reward_type]
+            if hasattr(self.env, 'env') and hasattr(self.env.env, 'reward_type'):
+                self.env.env.reward_type = self.reward_type_dict[self.reward_type]
+        if 'Door' in self.env.__str__():
+            self.reward_type = 'angle_success'
 
-        if hasattr(self.env, 'reward_type'):
-            self.env.reward_type = self.reward_type_dict[self.reward_type]
-        if hasattr(self.env, 'env') and hasattr(self.env.env, 'reward_type'):
-            self.env.env.reward_type = self.reward_type_dict[self.reward_type]
-        
     
     def reset(self):
         return self.env.reset()
@@ -156,15 +164,38 @@ class SawyerGoalWrapper(Wrapper):
             info['is_success'] = info['hand_success']
         if 'success' in info.keys():
             info['is_success'] = info['success']
+        if self.reward_type == 'puck_success':
+            info['is_success'] = info['puck_success']
+        elif self.reward_type == 'angle_success':
+            info['is_success'] = info['angle_success']
+        
         return obs, reward, done, info
     
     def render(self, mode='human'):
         return self.env.render()
     
     def compute_reward(self, achieved_goal, desired_goal, info):
+        return self.compute_rewards(achieved_goal, desired_goal, info)
+    
+    def compute_rewards(self, achieved_goal, desired_goal, info):
+        achieved_state, desired_state = achieved_goal, desired_goal
+        if self.reward_type == 'puck_success':
+            rand_state = self.env.observation_space['observation'].sample().reshape(1, -1)
+            if len(achieved_goal.shape) == 2:
+                rand_state = rand_state.repeat(achieved_goal.shape[0], axis=0)
+                rand_state[:, 3:] = achieved_goal
+                achieved_state = rand_state.copy()
+                rand_state[:, 3:] = desired_goal
+                desired_state = rand_state.copy()
+            else:
+                rand_state[:, 3:] = achieved_goal
+                achieved_state = rand_state.copy()
+                rand_state[:, 3:] = desired_goal
+                desired_state = rand_state.copy()
+
         obs = {
-            'state_achieved_goal': achieved_goal,
-            'state_desired_goal':desired_goal
+            'state_achieved_goal': achieved_state,
+            'state_desired_goal':desired_state
         }
         action = np.array([])
         return self.env.compute_rewards(action, obs)

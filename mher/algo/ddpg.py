@@ -11,7 +11,7 @@ from mher.algo.normalizer import Normalizer
 from mher.algo.replay_buffer import ReplayBuffer, SimpleReplayBuffer
 from mher.common.mpi_adam import MpiAdam
 from mher.common import tf_util
-from mher.algo.dynamics import ForwardDynamicsNumpy
+from mher.algo.dynamics import ForwardDynamicsNumpy, EnsembleForwardDynamics
 import time
 
 
@@ -288,7 +288,7 @@ class DDPG(object):
         self.pi_adam.update(pi_grad, self.pi_lr)
 
     def update_dynamic_model(self, init=False):
-        times = 1
+        times = 2
         if init:
             times = self.dynamic_init 
         for _ in range(times):
@@ -303,6 +303,10 @@ class DDPG(object):
         transitions['o'], transitions['g'] = self._preprocess_og(o, ag, g)
         transitions['o_2'], transitions['g_2'] = self._preprocess_og(o_2, ag_2, g)
 
+        if 'g' in transitions.keys():
+            if len(transitions['g'].shape) == 1:
+                transitions['g'] = transitions['g'].reshape(-1,1)
+                transitions['g_2'] = transitions['g_2'].reshape(-1,1)
         if method == 'list':
             transitions_batch = [transitions[key] for key in self.stage_shapes.keys()]
         else:
@@ -384,7 +388,7 @@ class DDPG(object):
 
         # loss functions
         target_Q_pi_tf = self.target.Q_pi_tf
-        clip_range = (-self.clip_return, 0. if self.clip_pos_returns else np.inf)
+        clip_range = (-self.clip_return, self.clip_return if self.clip_pos_returns else np.inf)
         if self.use_dynamic_nstep or self.use_mve:   
             target_tf = tf.clip_by_value(batch_tf['r'] , *clip_range)  # lambda target 
         else:
@@ -421,7 +425,7 @@ class DDPG(object):
         self.Q_adam = MpiAdam(self._vars('main/Q'), scale_grad_by_procs=False)
         self.pi_adam = MpiAdam(self._vars('main/pi'), scale_grad_by_procs=False)
 
-        self.dynamic_model = ForwardDynamicsNumpy(self.dimo, self.dimu)
+        self.dynamic_model = EnsembleForwardDynamics(3, self.dimo, self.dimu)
         # polyak averaging
         self.main_vars = self._vars('main/Q') + self._vars('main/pi')
         self.target_vars = self._vars('target/Q') + self._vars('target/pi')

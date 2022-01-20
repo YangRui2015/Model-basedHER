@@ -51,3 +51,8 @@ def register_envs():
             'boundary_dist':4,
         },
     )
+
+    register(
+        id='SawyerDoor-v0',
+        entry_point='mher.envs.sawyer_door:SawyerDoorGoalEnv',
+    )

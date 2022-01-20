@@ -39,12 +39,13 @@ def _vars(scope):
 # numpy forward dynamics
 class ForwardDynamicsNumpy:
     @store_args
-    def __init__(self, dimo, dimu, clip_norm=5, norm_eps=1e-4, hidden=256, layers=4, learning_rate=1e-3):
+    def __init__(self, dimo, dimu, clip_norm=5, norm_eps=1e-4, hidden=256, layers=4, learning_rate=1e-3, name='1'):
         self.obs_normalizer = NormalizerNumpy(size=dimo, eps=norm_eps)
         self.action_normalizer = NormalizerNumpy(size=dimu, eps=norm_eps)
         self.sess = U.get_session()
+        self.name = name
 
-        with tf.variable_scope('forward_dynamics_numpy'):
+        with tf.variable_scope('forward_dynamics_numpy_' + self.name):
             self.obs0_norm = tf.placeholder(tf.float32, shape=(None,self.dimo) , name='obs0')
             self.obs1_norm = tf.placeholder(tf.float32, shape=(None,self.dimo) , name='obs1')
             self.actions_norm = tf.placeholder(tf.float32, shape=(None,self.dimu) , name='actions')
@@ -99,3 +100,54 @@ class ForwardDynamicsNumpy:
             self.dynamics_adam.update(dynamics_grads, stepsize=self.learning_rate)
         return dynamics_loss
 
+
+class EnsembleForwardDynamics:
+    @store_args
+    def __init__(self, num_models, dimo, dimu, clip_norm=5, norm_eps=1e-4, hidden=256, layers=4, learning_rate=1e-3):
+        self.num_models = num_models
+        self.models = []
+        for i in range(num_models):
+            self.models.append(ForwardDynamicsNumpy(dimo, dimu, clip_norm, norm_eps, hidden, layers, learning_rate, name=str(i)))
+    
+    def predict_next_state(self, obs0, actions, mode='mean'): 
+        # random select prediciton or mean prediction
+        if mode == 'random':
+            idx = int(np.random.random() * self.num_models)
+            model = self.models[idx]
+            result = model.predict_next_state(obs0, actions)
+        elif mode == 'mean':
+            res = []
+            for model in self.models:
+                res.append(model.predict_next_state(obs0, actions))
+                
+            result_array = np.array(res).transpose([1,0,2])
+            result = result_array.mean(axis=1)
+        elif mode == 'mean_std':
+            res = []
+            for model in self.models:
+                res.append(model.predict_next_state(obs0, actions))
+            result_array = np.array(res).transpose([1,0,2])
+            result = result_array.mean(axis=1)
+            std = result_array.std(axis=1).sum(axis=1)
+            return result, std
+        else:
+            raise NotImplementedError('No such prediction mode!')
+        return result
+    
+    
+    def update(self, obs0, actions, obs1, times=1, mode='random'):
+        # update all or update a random model
+        if mode == 'all':
+            dynamics_per_sample_loss = []
+            for model in self.models:
+                loss = model.update(obs0, actions, obs1, times)
+                dynamics_per_sample_loss.append(loss)
+            dynamics_per_sample_loss_array = np.array(dynamics_per_sample_loss)
+            dynamics_per_sample_loss = dynamics_per_sample_loss_array.mean(axis=0)
+        elif mode == 'random':
+            idx = int(np.random.random() * self.num_models)
+            model = self.models[idx]
+            dynamics_per_sample_loss = model.update(obs0, actions, obs1, times)
+        else:
+            raise NotImplementedError('No such update mode!')
+        return dynamics_per_sample_loss

@@ -53,7 +53,16 @@ DEFAULT_ENV_PARAMS = {
         'random_init':20,
         'dynamic_init':100,
         'rollout_batch_size': 1,
-    }
+    },
+    'SawyerDoor-v0': {
+        'n_cycles': 30,  
+        'batch_size':64,
+        'n_batches': 5,
+        'n_test_rollouts': 100,
+        'random_init':20,
+        'dynamic_init':100,
+        'rollout_batch_size': 1,
+    },
 }
 
 
@@ -90,7 +99,7 @@ DEFAULT_PARAMS = {
     'norm_clip': 5,  # normalized observations are cropped to this values
 
     # random init episode
-    'random_init':100, 
+    'random_init':20, 
 
     # n step for experience replay
     'n_step':3,

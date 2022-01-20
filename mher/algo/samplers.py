@@ -37,6 +37,7 @@ def obs_to_goal_fun(env):
     from mher.envs import point2d
     from mher.envs import sawyer_reach
     from gym.envs.mujoco import reacher
+    from mher.envs.sawyer_door_hook import SawyerDoorHookEnv
 
     tmp_env = env
     while hasattr(tmp_env, 'env'):
@@ -67,6 +68,9 @@ def obs_to_goal_fun(env):
     elif isinstance(tmp_env, reacher.ReacherEnv):
         def obs_to_goal(observation):
             return observation[:, -3:-1]
+    elif isinstance(tmp_env, SawyerDoorHookEnv):
+        def obs_to_goal(observation):
+            return observation[:, -1]
     else:
         raise NotImplementedError('Do not support such type {}'.format(env))
         
@@ -92,7 +96,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         print( '*' * 10 + 'Do not use HER in this method' + '*' * 10)
     
     def _random_log(string):
-        if np.random.random() < 0.05:
+        if np.random.random() < 0.02:
             print(string)
     
     def _preprocess(episode_batch, batch_size_in_transitions):
@@ -124,7 +128,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         return future_ag.copy(), her_indexes.copy()
 
     
-    def _get_ags_from_states(batch_size, states, ratio=0.3, indexs=None):
+    def _get_ags_from_states(batch_size, states, ratio=0.8, indexs=None):
         if indexs is None:
             indexs = (np.random.uniform(size=batch_size) < ratio)
         next_goals = obs_to_goal_fun(states[indexs])
@@ -144,7 +148,10 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
         if not no_her:
             future_ag, her_indexes = _get_her_ags(episode_batch, episode_idxs, t_samples, batch_size, T)
-            transitions['g'][her_indexes] = future_ag
+            if len(transitions['g'].shape) == 1:
+                transitions['g'][her_indexes] = future_ag.reshape(-1)
+            else:
+                transitions['g'][her_indexes] = future_ag
 
         transitions['r'] = _get_reward(transitions['ag_2'], transitions['g'])
         return _reshape_transitions(transitions, batch_size)
@@ -180,11 +187,15 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         transitions['u'] = np.concatenate(actions_list,axis=0).reshape(batch_size * steps, -1)
         return transitions
 
-    def _dynamic_interaction(o, g, action_fun, dynamic_model, steps):
+    def _dynamic_interaction(o, g, action_fun, dynamic_model, steps, act_noise=0):
         last_state = o.copy()
         next_states_list = []
         for _ in range(0, steps):
             action_array = action_fun(o=last_state, g=g)
+            if act_noise > 0: # action noise
+                action_array += np.random.normal(scale=act_noise, size=action_array.shape)
+                action_array = np.clip(action_array, -1,1)
+
             next_state_array = dynamic_model.predict_next_state(last_state, action_array)
             next_states_list.append(next_state_array.copy())
             last_state = next_state_array
@@ -231,7 +242,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         steps, gamma, Q_fun, alpha = info['nstep'], info['gamma'], info['get_Q_pi'], info['alpha']
         dynamic_model, action_fun = info['dynamic_model'], info['action_fun']
         dynamic_ag_ratio = info['mb_relabeling_ratio'] 
-        transitions, _, _, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
+        transitions, episode_idxs, t_samples, batch_size, T = _preprocess(episode_batch, batch_size_in_transitions)
         train_policy, no_mb_relabel, no_mgsl = info['train_policy'], info['no_mb_relabel'], info['no_mgsl']
         dynamic_ag_ratio_cur = dynamic_ag_ratio
 
@@ -246,7 +257,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun, obs_to_go
         # model-based relabeling
         last_state = transitions['o_2'].copy()  
         if dynamic_ag_ratio_cur > 0:
-            next_states_list = _dynamic_interaction(last_state, transitions['g'], action_fun, dynamic_model, steps)
+            next_states_list = _dynamic_interaction(last_state, transitions['g'], action_fun, dynamic_model, steps, act_noise=0.2)
             next_states_list.insert(0, last_state.copy())
             next_states_array = np.concatenate(next_states_list,axis=1).reshape(batch_size, steps+1, -1) 
             step_idx = np.random.randint(next_states_array.shape[1], size=(batch_size))

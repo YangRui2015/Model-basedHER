@@ -1,5 +1,7 @@
 # Model-based Hindsight Experience Replay(MHER)
-Code for Model-based Hindisight Experience Replay (MHER) . MHER is a novel algorithm leveraging model-based achieved goals for both goal relabeling and policy improvement.
+Code for Model-based Hindisight Experience Replay (MHER). MHER is a novel algorithm leveraging model-based achieved goals for both goal relabeling and policy improvement.
+
+MHER can also be used for offline multi-goal RL, we revised the code based on WGCSL in the MHER_offline folder, where you can also find the offline datasets for all six environments used in our paper. To train offline MHER and other baselines, you can install the MHER_offline package and run it following the README file in MHER_offline folder. 
 
 <div style="text-align: center;">
 <img src="pics/diagram.png"  >
@@ -19,7 +21,7 @@ python3.6+, tensorflow, gym, mujoco, mpi4py
 
 
 ## Usage
-Environments: Point2DLargeEnv-v1, Point2D-FourRoom-v1, FetchReach-v1, SawyerReachXYZEnv-v1, Reacher-v2.
+Environments: Point2DLargeEnv-v1, Point2D-FourRoom-v1, FetchReach-v1, SawyerReachXYZEnv-v1, Reacher-v2, SawyerDoor-v0.
 
 MHER:
 ```bash

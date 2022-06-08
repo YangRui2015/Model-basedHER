@@ -1,5 +1,5 @@
 # Offline MHER
-Our code is based on WGCSL, whose original anonymous code can be found here https://anonymous.4open.science/r/WGCSL-527C.
+Our code is based on WGCSL, whose original anonymous code can be found here [https://github.com/YangRui2015/AWGCSL](https://github.com/YangRui2015/AWGCSL).
 
 
 ## Requirements
